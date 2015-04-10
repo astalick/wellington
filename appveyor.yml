@@ -1,0 +1,67 @@
+# version format
+version: "{build}"
+
+# Operating system (build VM template)
+os: Windows Server 2012 R2
+
+# environment variables
+environment:
+  CTEST_OUTPUT_ON_FAILURE: 1
+  GOPATH: c:\gopath
+  matrix:
+  - Compiler: mingw
+    Build: static
+
+init:
+- ps: >-
+    $app = Get-WmiObject -Class Win32_Product -Filter "Vendor = 'http://golang.org'"
+
+    if ($app) {
+      $app.Uninstall()
+    }
+
+# scripts that run after cloning repository
+install:
+  - set PATH=%LOCALAPPDATA%\atom\bin;%GOPATH%\bin;c:\go\bin;%PATH%
+  - appveyor DownloadFile https://storage.googleapis.com/golang/go1.4.2.windows-amd64.msi
+  - msiexec /i go1.4.2.windows-amd64.msi /q
+  - go version
+  - go env
+  - mkdir c:\gopath
+  - go get -u github.com/tools/godep
+  - godep restore
+  - ps: |
+      #get libsass
+      git clone https://github.com/sass/libsass.git
+      git reset --hard 3.2.0-beta.5
+  - ps: |
+      if ($env:Compiler -eq "mingw" -AND -Not (Test-Path "C:\mingw64")) {
+        # Install MinGW.
+        $url  = "http://sourceforge.net/projects/mingw-w64/files/"
+        $url += "Toolchains%20targetting%20Win64/Personal%20Builds/"
+        $url += "mingw-builds/4.9.2/threads-win32/seh/"
+        $url += "x86_64-4.9.2-release-win32-seh-rt_v3-rev0.7z/download"
+        Invoke-WebRequest -UserAgent wget -Uri $url -OutFile x86_64-4.9.2-release-win32-seh-rt_v3-rev0.7z
+        &7z x -oC:\ x86_64-4.9.2-release-win32-seh-rt_v3-rev0.7z > $null
+      }
+  - set PATH=C:\mingw64\bin;%PATH%
+  - set PKG_CONFIG_PATH=%APPVEYOR_BUILD_FOLDER%\libsass\lib\pkgconfig
+  - set CC=gcc
+
+# to run your custom scripts instead of automatic MSBuild
+build_script:
+  - cd %APPVEYOR_BUILD_FOLDER%
+  - SET PATH=%GOPATH%\bin;%PATH%
+  - ps: |
+      if ($env:Compiler -eq "mingw") {
+        mingw32-make -j4 libsass
+      } else {
+        msbuild /m:4 /p:Configuration=$env:Config win\libsass.sln
+      }
+  - make install test
+
+# to disable automatic tests
+test: off
+
+# to disable deployment
+deploy: off
